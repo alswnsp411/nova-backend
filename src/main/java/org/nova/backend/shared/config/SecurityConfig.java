@@ -2,11 +2,12 @@ package org.nova.backend.shared.config;
 
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.Arrays;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.nova.backend.member.domain.model.valueobject.Role;
 import org.nova.backend.shared.jwt.JWTFilter;
 import org.nova.backend.shared.jwt.JWTUtil;
-import org.nova.backend.shared.security.CORSFilter;
 import org.nova.backend.shared.security.LoginFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,8 +23,9 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-
-import java.util.Set;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -33,31 +35,51 @@ public class SecurityConfig {
     private final AuthenticationConfiguration authenticationConfiguration;
     private final JWTUtil jwtUtil;
 
+    private static final Set<String> ALLOWED_ORIGINS = Set.of(
+            "https://nova.cbnu.ac.kr",
+            "http://localhost:8080",
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://localhost:3002"
+    );
+
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
-
         return configuration.getAuthenticationManager();
     }
 
     @Bean
     public BCryptPasswordEncoder bCryptPasswordEncoder() {
-
         return new BCryptPasswordEncoder();
     }
 
     @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(Arrays.asList(
+                "https://nova.cbnu.ac.kr",
+                "http://localhost:8080",
+                "http://localhost:3000",
+                "http://localhost:3001",
+                "http://localhost:3002"
+        ));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("Content-Type", "Authorization"));
+        configuration.setExposedHeaders(Arrays.asList("Content-Disposition"));
+        configuration.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-
         http
-                .csrf(AbstractHttpConfigurer::disable);
-
-        http
-                .formLogin(AbstractHttpConfigurer::disable);
-
-        http
-                .httpBasic(AbstractHttpConfigurer::disable);
-
-        http
+                .csrf(AbstractHttpConfigurer::disable)
+                .formLogin(AbstractHttpConfigurer::disable)
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests((auth) -> {
                     auth.requestMatchers("/files/public/**").permitAll();
 
@@ -85,11 +107,7 @@ public class SecurityConfig {
                 .logout(this::logOut);
 
         http
-                .addFilterBefore(new CORSFilter(), LoginFilter.class);
-        http
-                .addFilterBefore(new JWTFilter(jwtUtil), LoginFilter.class);
-
-        http
+                .addFilterBefore(new JWTFilter(jwtUtil), LoginFilter.class)
                 .addFilterAt(new LoginFilter(authenticationManager(authenticationConfiguration), jwtUtil),
                         UsernamePasswordAuthenticationFilter.class);
 
@@ -103,16 +121,6 @@ public class SecurityConfig {
     private void logOut(LogoutConfigurer<HttpSecurity> logout) {
         logout.logoutUrl("/api/v1/members/logout")
                 .logoutSuccessHandler((request, response, authentication) -> {
-                    // CORS 헤더 설정
-                    String origin = request.getHeader("Origin");
-                    if (origin != null && ALLOWED_ORIGINS.contains(origin)) {
-                        response.setHeader("Access-Control-Allow-Origin", origin);
-                        response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-                        response.setHeader("Access-Control-Allow-Headers", "Content-Type");
-                        response.setHeader("Access-Control-Allow-Credentials", "true");
-                    }
-
-                    // auth token 담은 쿠키 제거
                     Cookie cookie = new Cookie("AUTH_TOKEN", null);
                     cookie.setHttpOnly(true);
                     cookie.setPath("/");
@@ -121,15 +129,6 @@ public class SecurityConfig {
                     response.setStatus(HttpServletResponse.SC_OK);
                 });
     }
-
-    // ALLOWED_ORIGINS Set 추가
-    private static final Set<String> ALLOWED_ORIGINS = Set.of(
-            "https://nova.cbnu.ac.kr",
-            "http://localhost:8080",
-            "http://localhost:3000",
-            "http://localhost:3001",
-            "http://localhost:3002"
-    );
 
     private void configureSuggestionBoardPermissions(
             AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry auth
@@ -231,7 +230,7 @@ public class SecurityConfig {
         auth
                 .requestMatchers(HttpMethod.POST, "/api/v1/members").permitAll()  //회원가입
                 .requestMatchers(HttpMethod.POST, "/api/v1/members/profile-photo").permitAll()  //회원가입시 프로필 사진 업로드
-                .requestMatchers( "/api/v1/members/simple-profile").permitAll()  //회원 간단 프로필 조회
+                .requestMatchers("/api/v1/members/simple-profile").permitAll()  //회원 간단 프로필 조회
                 .requestMatchers("/api/v1/members/login").permitAll()  //로그인
                 // 회원가입 시 이메일 인증
                 .requestMatchers("/api/v1/email-auth/**").permitAll()
